@@ -14,7 +14,7 @@ GOTENBERG_USER_UID=1001
 NOTO_COLOR_EMOJI_VERSION=v2.047 # See https://github.com/googlefonts/noto-emoji/releases.
 PDFTK_VERSION=v3.3.3 # See https://gitlab.com/pdftk-java/pdftk/-/releases - Binary package.
 PDFCPU_VERSION=v0.8.1 # See https://github.com/pdfcpu/pdfcpu/releases.
-GOLANGCI_LINT_VERSION=v1.61.0 # See https://github.com/golangci/golangci-lint/releases.
+GOLANGCI_LINT_VERSION=v1.63.4 # See https://github.com/golangci/golangci-lint/releases.
 
 .PHONY: build
 build: ## Build the Gotenberg's Docker image
@@ -46,7 +46,7 @@ API-DOWNLOAD-FROM-DENY-LIST=
 API-DOWNLOAD-FROM-FROM-MAX-RETRY=4
 API-DISABLE-DOWNLOAD-FROM=false
 API_DISABLE_HEALTH_CHECK_LOGGING=false
-CHROMIUM_RESTART_AFTER=0
+CHROMIUM_RESTART_AFTER=10
 CHROMIUM_MAX_QUEUE_SIZE=0
 CHROMIUM_AUTO_START=false
 CHROMIUM_START_TIMEOUT=20s
@@ -73,6 +73,7 @@ LOG_FORMAT=auto
 LOG_FIELDS_PREFIX=
 PDFENGINES_ENGINES=
 PDFENGINES_MERGE_ENGINES=qpdf,pdfcpu,pdftk
+PDFENGINES_SPLIT_ENGINES=pdfcpu,qpdf,pdftk
 PDFENGINES_CONVERT_ENGINES=libreoffice-pdfengine
 PDFENGINES_READ_METADATA_ENGINES=exiftool
 PDFENGINES_WRITE_METADATA_ENGINES=exiftool
@@ -141,6 +142,7 @@ run: ## Start a Gotenberg container
 	--log-fields-prefix=$(LOG_FIELDS_PREFIX) \
 	--pdfengines-engines=$(PDFENGINES_ENGINES) \
 	--pdfengines-merge-engines=$(PDFENGINES_MERGE_ENGINES) \
+	--pdfengines-split-engines=$(PDFENGINES_SPLIT_ENGINES) \
 	--pdfengines-convert-engines=$(PDFENGINES_CONVERT_ENGINES) \
 	--pdfengines-read-metadata-engines=$(PDFENGINES_READ_METADATA_ENGINES) \
 	--pdfengines-write-metadata-engines=$(PDFENGINES_WRITE_METADATA_ENGINES) \

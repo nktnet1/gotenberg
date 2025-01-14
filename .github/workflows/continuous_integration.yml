@@ -8,6 +8,13 @@ on:
     branches:
       - main
 
+concurrency:
+  group: ${{ (github.event_name == 'pull_request' && github.event.pull_request.number) || 'main' }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
 jobs:
 
   lint:
@@ -24,7 +31,7 @@ jobs:
       - name: Run linters
         uses: golangci/golangci-lint-action@v6
         with:
-          version: v1.61.0
+          version: v1.63.4
 
   tests:
     needs:

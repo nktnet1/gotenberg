@@ -21,6 +21,7 @@ import (
 
 	"github.com/gotenberg/gotenberg/v8/pkg/gotenberg"
 	"github.com/gotenberg/gotenberg/v8/pkg/modules/api"
+	"github.com/gotenberg/gotenberg/v8/pkg/modules/pdfengines"
 )
 
 // FormDataChromiumOptions creates [Options] from the form data. Fallback to
@@ -316,39 +317,6 @@ func FormDataChromiumScreenshotOptions(ctx *api.Context) (*api.FormData, Screens
 	return form, screenshotOptions
 }
 
-// FormDataChromiumPdfFormats creates [gotenberg.PdfFormats] from the form
-// data. Fallback to default value if the considered key is not present.
-func FormDataChromiumPdfFormats(form *api.FormData) gotenberg.PdfFormats {
-	var (
-		pdfa  string
-		pdfua bool
-	)
-
-	form.
-		String("pdfa", &pdfa, "").
-		Bool("pdfua", &pdfua, false)
-
-	return gotenberg.PdfFormats{
-		PdfA:  pdfa,
-		PdfUa: pdfua,
-	}
-}
-
-// FormDataPdfMetadata creates metadata object from the form data.
-func FormDataPdfMetadata(form *api.FormData) map[string]interface{} {
-	var metadata map[string]interface{}
-	form.Custom("metadata", func(value string) error {
-		if len(value) > 0 {
-			err := json.Unmarshal([]byte(value), &metadata)
-			if err != nil {
-				return fmt.Errorf("unmarshal metadata: %w", err)
-			}
-		}
-		return nil
-	})
-	return metadata
-}
-
 // convertUrlRoute returns an [api.Route] which can convert a URL to PDF.
 func convertUrlRoute(chromium Api, engine gotenberg.PdfEngine) api.Route {
 	return api.Route{
@@ -358,8 +326,9 @@ func convertUrlRoute(chromium Api, engine gotenberg.PdfEngine) api.Route {
 		Handler: func(c echo.Context) error {
 			ctx := c.Get("context").(*api.Context)
 			form, options := FormDataChromiumPdfOptions(ctx)
-			pdfFormats := FormDataChromiumPdfFormats(form)
-			metadata := FormDataPdfMetadata(form)
+			mode := pdfengines.FormDataPdfSplitMode(form, false)
+			pdfFormats := pdfengines.FormDataPdfFormats(form)
+			metadata := pdfengines.FormDataPdfMetadata(form, false)
 
 			var url string
 			err := form.
@@ -369,7 +338,7 @@ func convertUrlRoute(chromium Api, engine gotenberg.PdfEngine) api.Route {
 				return fmt.Errorf("validate form data: %w", err)
 			}
 
-			err = convertUrl(ctx, chromium, engine, url, options, pdfFormats, metadata)
+			err = convertUrl(ctx, chromium, engine, url, options, mode, pdfFormats, metadata)
 			if err != nil {
 				return fmt.Errorf("convert URL to PDF: %w", err)
 			}
@@ -418,8 +387,9 @@ func convertHtmlRoute(chromium Api, engine gotenberg.PdfEngine) api.Route {
 		Handler: func(c echo.Context) error {
 			ctx := c.Get("context").(*api.Context)
 			form, options := FormDataChromiumPdfOptions(ctx)
-			pdfFormats := FormDataChromiumPdfFormats(form)
-			metadata := FormDataPdfMetadata(form)
+			mode := pdfengines.FormDataPdfSplitMode(form, false)
+			pdfFormats := pdfengines.FormDataPdfFormats(form)
+			metadata := pdfengines.FormDataPdfMetadata(form, false)
 
 			var inputPath string
 			err := form.
@@ -430,7 +400,7 @@ func convertHtmlRoute(chromium Api, engine gotenberg.PdfEngine) api.Route {
 			}
 
 			url := fmt.Sprintf("file://%s", inputPath)
-			err = convertUrl(ctx, chromium, engine, url, options, pdfFormats, metadata)
+			err = convertUrl(ctx, chromium, engine, url, options, mode, pdfFormats, metadata)
 			if err != nil {
 				return fmt.Errorf("convert HTML to PDF: %w", err)
 			}
@@ -480,8 +450,9 @@ func convertMarkdownRoute(chromium Api, engine gotenberg.PdfEngine) api.Route {
 		Handler: func(c echo.Context) error {
 			ctx := c.Get("context").(*api.Context)
 			form, options := FormDataChromiumPdfOptions(ctx)
-			pdfFormats := FormDataChromiumPdfFormats(form)
-			metadata := FormDataPdfMetadata(form)
+			mode := pdfengines.FormDataPdfSplitMode(form, false)
+			pdfFormats := pdfengines.FormDataPdfFormats(form)
+			metadata := pdfengines.FormDataPdfMetadata(form, false)
 
 			var (
 				inputPath     string
@@ -501,7 +472,7 @@ func convertMarkdownRoute(chromium Api, engine gotenberg.PdfEngine) api.Route {
 				return fmt.Errorf("transform markdown file(s) to HTML: %w", err)
 			}
 
-			err = convertUrl(ctx, chromium, engine, url, options, pdfFormats, metadata)
+			err = convertUrl(ctx, chromium, engine, url, options, mode, pdfFormats, metadata)
 			if err != nil {
 				return fmt.Errorf("convert markdown to PDF: %w", err)
 			}
@@ -625,7 +596,7 @@ func markdownToHtml(ctx *api.Context, inputPath string, markdownPaths []string) 
 	return fmt.Sprintf("file://%s", inputPath), nil
 }
 
-func convertUrl(ctx *api.Context, chromium Api, engine gotenberg.PdfEngine, url string, options PdfOptions, pdfFormats gotenberg.PdfFormats, metadata map[string]interface{}) error {
+func convertUrl(ctx *api.Context, chromium Api, engine gotenberg.PdfEngine, url string, options PdfOptions, mode gotenberg.SplitMode, pdfFormats gotenberg.PdfFormats, metadata map[string]interface{}) error {
 	outputPath := ctx.GeneratePath(".pdf")
 
 	err := chromium.Pdf(ctx, ctx.Log(), url, outputPath, options)
@@ -664,34 +635,39 @@ func convertUrl(ctx *api.Context, chromium Api, engine gotenberg.PdfEngine, url 
 		return fmt.Errorf("convert to PDF: %w", err)
 	}
 
-	// So far so good, the URL has been converted to PDF.
-	// Now, let's check if the client want to convert the resulting PDF
-	// to specific formats.
-	zeroValued := gotenberg.PdfFormats{}
-	if pdfFormats != zeroValued {
-		convertInputPath := outputPath
-		convertOutputPath := ctx.GeneratePath(".pdf")
-
-		err = engine.Convert(ctx, ctx.Log(), pdfFormats, convertInputPath, convertOutputPath)
-		if err != nil {
-			return fmt.Errorf("convert PDF: %w", err)
-		}
-
-		// Important: the output path is now the converted file.
-		outputPath = convertOutputPath
-	}
-
-	// Writes and potentially overrides metadata entries, if any.
-	if len(metadata) > 0 {
-		err = engine.WriteMetadata(ctx, ctx.Log(), metadata, outputPath)
-		if err != nil {
-			return fmt.Errorf("write metadata: %w", err)
-		}
-	}
-
-	err = ctx.AddOutputPaths(outputPath)
+	outputPaths, err := pdfengines.SplitPdfStub(ctx, engine, mode, []string{outputPath})
 	if err != nil {
-		return fmt.Errorf("add output path: %w", err)
+		return fmt.Errorf("split PDF: %w", err)
+	}
+
+	convertOutputPaths, err := pdfengines.ConvertStub(ctx, engine, pdfFormats, outputPaths)
+	if err != nil {
+		return fmt.Errorf("convert PDF(s): %w", err)
+	}
+
+	err = pdfengines.WriteMetadataStub(ctx, engine, metadata, convertOutputPaths)
+	if err != nil {
+		return fmt.Errorf("write metadata: %w", err)
+	}
+
+	zeroValuedSplitMode := gotenberg.SplitMode{}
+	zeroValuedPdfFormats := gotenberg.PdfFormats{}
+	if mode != zeroValuedSplitMode && pdfFormats != zeroValuedPdfFormats {
+		// The PDF has been split and split parts have been converted to a
+		// specific format. We want to keep the split naming.
+		for i, convertOutputPath := range convertOutputPaths {
+			err = ctx.Rename(convertOutputPath, outputPaths[i])
+			if err != nil {
+				return fmt.Errorf("rename output path: %w", err)
+			}
+		}
+	} else {
+		outputPaths = convertOutputPaths
+	}
+
+	err = ctx.AddOutputPaths(outputPaths...)
+	if err != nil {
+		return fmt.Errorf("add output paths: %w", err)
 	}
 
 	return nil
